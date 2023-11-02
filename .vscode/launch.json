@@ -1,0 +1,45 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'fifteen_minute'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=fifteen_minute",
+                    "--package=fifteen_minute"
+                ],
+                "filter": {
+                    "name": "fifteen_minute",
+                    "kind": "bin"
+                }
+            },
+            "args": ["EH8 9SU"],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'fifteen_minute'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=fifteen_minute",
+                    "--package=fifteen_minute"
+                ],
+                "filter": {
+                    "name": "fifteen_minute",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
