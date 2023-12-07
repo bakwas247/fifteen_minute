@@ -82,8 +82,32 @@ fn get_address_coordinates(address: String) -> (f64, f64) {
 }
 
 fn get_active_url() -> String {
-    let url: String = "https://maps.mail.ru/osm/tools/overpass/api/interpreter".to_owned();
-    return url;
+    let urls: Vec<String> = vec![
+        "https://maps.mail.ru/osm/tools/overpass/api/interpreter".to_string(),
+        "https://overpass-api.de/api/interpreter".to_string(),
+        "https://overpass.kumi.systems/api/interpreter".to_string(),
+    ];
+    let index = 0;
+    let mut url = &urls[index];
+    let mut valid_url = false;
+    let query = format!(
+        r##"
+    [out:json]
+    [timeout:25];
+    (
+    nwr["amenity"](55.947049399999995,-3.1827352999999997,55.9490494,-3.1817353);
+    );
+    out geom;
+            "##
+    );
+    while valid_url != true && index < urls.len() {
+        url = &urls[index];
+        let res = Client::new().post(url).body(query.clone()).send();
+        if res.unwrap().status().is_success() {
+            valid_url = true;
+        }
+    }
+    return url.clone();
 }
 
 fn response_to_structures(
@@ -442,5 +466,7 @@ fn main() {
         nodes_lut,
         args.distance,
     );
-    println!("{:?}", new_amenities);
+    for amenity in new_amenities.iter() {
+        println!("{:?}", amenity);
+    }
 }
