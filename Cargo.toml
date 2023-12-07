@@ -4,20 +4,19 @@ version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[profile.dev]
+opt-level = 0
+
+[profile.release]
+opt-level = 3
 
 [dependencies]
-clap = { version = "4.0", features = ["derive"] }
+clap = { version = "*", features = ["derive"] }
 geocoding = { version = "*" }
-urlencoding = { version = "*" }
-structopt = "0.3.21"
-exitfailure = "0.5.1"
-reqwest = { version = "0.11.0", features = ["json", "blocking"] }
-serde = "1.0.190"
+reqwest = { version = "*", features = ["json", "blocking"] }
 serde_json = "1.0.108"
-serde_derive = "1.0.190"
 fast_paths = "0.2.0"
 kiddo = "4.0.0"
 rayon = "1.8.0"
-triple_buffer = "7.0.0"
 haversine-redux = "0.2.1"
 bimap = "0.6.3"

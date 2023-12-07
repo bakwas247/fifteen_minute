@@ -14,6 +14,7 @@ use rayon::prelude::*;
 use reqwest::blocking::Client;
 use serde_json::json;
 use serde_json::Value;
+
 #[derive(Parser)]
 struct Cli {
     address: String,
