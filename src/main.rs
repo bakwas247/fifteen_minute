@@ -1,15 +1,14 @@
-use std::borrow::Borrow;
-use std::collections::HashSet;
-use std::ptr::null;
-use std::{path, usize};
+use std::collections::HashMap;
+
+use std::usize;
 
 use bimap::{BiHashMap, BiMap};
 use clap::Parser;
 use fast_paths::InputGraph;
 use geocoding::openstreetmap::{OpenstreetmapParams, OpenstreetmapResponse};
 use geocoding::Openstreetmap;
-use haversine_redux::{Location, Unit};
-use kiddo::{ImmutableKdTree, SquaredEuclidean};
+use haversine_redux::Location;
+use kiddo::{ImmutableKdTree, NearestNeighbour, SquaredEuclidean};
 use rayon::prelude::*;
 use reqwest::blocking::Client;
 use serde_json::json;
@@ -23,27 +22,8 @@ struct Cli {
 
 struct Node {
     name: Option<String>,
-    lat: u64,
-    lon: u64,
-    id: usize,
-}
-
-#[derive(Eq, Hash, PartialEq, Debug, Clone)]
-struct GraphNode {
     coordinate: (u64, u64),
-    id: u64,
-    graph_id: usize,
-}
-
-impl Borrow<(u64, u64)> for GraphNode {
-    fn borrow(&self) -> &(u64, u64) {
-        &self.coordinate
-    }
-}
-impl Borrow<usize> for GraphNode {
-    fn borrow(&self) -> &usize {
-        &self.graph_id
-    }
+    id: usize,
 }
 
 #[derive(Eq, Hash, PartialEq, Debug, Clone)]
@@ -100,11 +80,16 @@ fn get_active_url() -> String {
 
 fn response_to_structures(
     response: Value,
-) -> (Vec<Node>, Vec<Way>, HashSet<Node>, BiHashMap<usize, usize>) {
+) -> (
+    Vec<Node>,
+    Vec<Way>,
+    HashMap<usize, Node>,
+    BiHashMap<usize, usize>,
+) {
     let mut failed = false;
     let mut index = 0;
     let mut amenities: Vec<Node> = Vec::new();
-    let mut highway_nodes: HashSet<Node> = HashSet::new();
+    let mut highway_nodes: HashMap<usize, Node> = HashMap::new();
     let mut highways: Vec<Way> = Vec::new();
     while failed == false {
         if response["elements"][index] != json!(null) {
@@ -155,14 +140,9 @@ fn response_to_structures(
                 }
                 if temp_name != None {
                     temp_id = response["elements"][index]["id"].to_string();
-                    println!("{:?}", { temp_name.clone() });
-                    println!("{:?}", { temp_lat.clone() });
-                    println!("{:?}", { temp_lon.clone() });
-                    println!("{:?}", { temp_id.clone() });
                     let new_node = Node {
                         name: temp_name,
-                        lat: temp_lat,
-                        lon: temp_lon,
+                        coordinate: (temp_lat, temp_lon),
                         id: temp_id.to_string().parse::<usize>().unwrap(),
                     };
                     amenities.push(new_node);
@@ -188,17 +168,13 @@ fn response_to_structures(
                             .to_bits();
 
                         temp_id = response["elements"][index]["nodes"][way_index].to_string();
-                        println!("{:?}", { temp_lat.clone() });
-                        println!("{:?}", { temp_lon.clone() });
-                        println!("{:?}", { temp_id.clone() });
                         let new_node = Node {
                             name: None,
-                            lat: temp_lat,
-                            lon: temp_lon,
+                            coordinate: (temp_lat, temp_lon),
                             id: temp_id.to_string().parse::<usize>().unwrap(),
                         };
                         nodes_vec.push(new_node.clone());
-                        highway_nodes.insert(new_node);
+                        highway_nodes.insert(new_node.id, new_node);
                         way_index += 1;
                     } else {
                         failed_way = true
@@ -218,8 +194,8 @@ fn response_to_structures(
     }
     let mut adder_index: usize = 0;
     let mut nodes_lookup_table: BiHashMap<usize, usize> = BiMap::new();
-    for node in highway_nodes.iter() {
-        nodes_lookup_table.insert(adder_index, node.id);
+    for value in highway_nodes.iter() {
+        nodes_lookup_table.insert(adder_index, value.1.id);
         adder_index += 1;
     }
     for node in amenities.iter() {
@@ -229,13 +205,37 @@ fn response_to_structures(
     return (amenities, highways, highway_nodes, nodes_lookup_table);
 }
 
-fn get_node_id(graph_id: usize, node_lut: &BiHashMap<usize, usize>) -> usize {
-    let res: usize = node_lut
-        .get_by_left(&graph_id)
-        .unwrap_or(&usize::MAX)
-        .clone();
-    return res;
-}
+// fn get_node_id(graph_id: usize, node_lut: &BiHashMap<usize, usize>) -> usize {
+//     let res: usize = node_lut
+//         .get_by_left(&graph_id)
+//         .unwrap_or(&usize::MAX)
+//         .clone();
+//     return res;
+// }
+
+// fn get_node_from_coord(coord: (u64, u64), nodes: &HashSet<Node>) -> Node {
+//     let res: Node = nodes
+//         .get(&coord)
+//         .unwrap_or(&Node {
+//             name: None,
+//             coordinate: (u64::MAX, u64::MAX),
+//             id: (usize::MAX),
+//         })
+//         .clone();
+//     return res;
+// }
+
+// fn get_node_from_id(id: usize, nodes: &HashSet<Node>) -> Node {
+//     let res: Node = nodes
+//         .get(&id)
+//         .unwrap_or(&Node {
+//             name: None,
+//             coordinate: (u64::MAX, u64::MAX),
+//             id: (usize::MAX),
+//         })
+//         .clone();
+//     return res;
+// }
 
 fn get_graph_id(node_id: usize, node_lut: &BiHashMap<usize, usize>) -> usize {
     let res = node_lut
@@ -248,22 +248,21 @@ fn get_graph_id(node_id: usize, node_lut: &BiHashMap<usize, usize>) -> usize {
 fn create_graph(
     amenities: Vec<Node>,
     highways: Vec<Way>,
-    highway_nodes: HashSet<Node>,
+    highway_nodes: HashMap<usize, Node>,
     node_lut: BiHashMap<usize, usize>,
     neighbour_nodes: ImmutableKdTree<f64, 2>,
-    entries: Vec<[f64; 2]>,
+    entries: Vec<usize>,
 ) -> InputGraph {
-    let mut total_nodes: HashSet<Node> = highway_nodes.clone();
+    let mut total_nodes: HashMap<usize, Node> = highway_nodes.clone();
     for node in amenities.iter() {
-        total_nodes.insert(node.clone());
+        total_nodes.insert(node.id, node.clone());
     }
     let mut input_graph = InputGraph::new();
     let road_edges: Vec<Vec<(usize, usize, usize)>> = highways
         .par_iter()
         .map(|highway| {
             let mut last_node: Node = Node {
-                lat: 0,
-                lon: 0,
+                coordinate: (0, 0),
                 id: 0,
                 name: Some("Uninitialised".to_string()),
             };
@@ -272,10 +271,14 @@ fn create_graph(
                 if last_node.name != Some("Uninitialised".to_string()) {
                     let node1 = get_graph_id(node.id, &node_lut);
                     let node2 = get_graph_id(last_node.id, &node_lut);
-                    let start: Location =
-                        Location::new(f64::from_bits(node.lat), f64::from_bits(node.lon));
-                    let end: Location =
-                        Location::new(f64::from_bits(last_node.lat), f64::from_bits(last_node.lon));
+                    let start: Location = Location::new(
+                        f64::from_bits(node.coordinate.0),
+                        f64::from_bits(node.coordinate.1),
+                    );
+                    let end: Location = Location::new(
+                        f64::from_bits(last_node.coordinate.0),
+                        f64::from_bits(last_node.coordinate.1),
+                    );
                     let something = (node1, node2, (start.kilometers_to(&end) * 1000.0) as usize);
                     edges.push(something);
                 }
@@ -291,30 +294,54 @@ fn create_graph(
     let mut neighbour_edges: Vec<(usize, usize, usize)> = amenities
         .par_iter()
         .map(|node: &Node| {
-            let nearest = neighbour_nodes.nearest_one::<SquaredEuclidean>(&[
-                f64::from_bits(node.lat),
-                f64::from_bits(node.lon),
-            ]);
-            println!("{:?}", nearest);
-            return (0 as usize, 0 as usize, 0 as usize);
+            let nearest: NearestNeighbour<f64, u64> = neighbour_nodes
+                .nearest_one::<SquaredEuclidean>(&[
+                    f64::from_bits(node.coordinate.0),
+                    f64::from_bits(node.coordinate.1),
+                ]);
+            let index: u64 = nearest.item;
+            println!("{:?}", entries[index as usize]);
+            let neighbour_node = &highway_nodes[&entries[index as usize]];
+            println!("{:?}", neighbour_node);
+            let start: Location = Location::new(
+                f64::from_bits(node.coordinate.0),
+                f64::from_bits(node.coordinate.1),
+            );
+            let end: Location = Location::new(
+                f64::from_bits(neighbour_node.coordinate.0),
+                f64::from_bits(neighbour_node.coordinate.1),
+            );
+            return (
+                get_graph_id(node.id, &node_lut),
+                get_graph_id(entries[index as usize], &node_lut) as usize,
+                (start.kilometers_to(&end) * 1000.0) as usize,
+            );
         })
         .collect();
     let mut edges = road_edges.concat();
     edges.append(&mut neighbour_edges);
-    let _ = edges
-        .iter()
-        .map(|edge| input_graph.add_edge_bidir(edge.0, edge.1, edge.2));
+    println!("{:?}", edges);
+    for edge in edges.iter() {
+        input_graph.add_edge_bidir(edge.0, edge.1, edge.2);
+    }
 
+    input_graph.freeze();
     return input_graph;
 }
 
-fn create_kdtree(highway_nodes: HashSet<Node>) -> (ImmutableKdTree<f64, 2>, Vec<[f64; 2]>) {
-    let entries: Vec<[f64; 2]> = highway_nodes
-        .par_iter()
-        .map(|node| [f64::from_bits(node.lat), f64::from_bits(node.lon)])
-        .collect();
+fn create_kdtree(highway_nodes: HashMap<usize, Node>) -> (ImmutableKdTree<f64, 2>, Vec<usize>) {
+    let mut entries: Vec<[f64; 2]> = Vec::new();
+    let mut entries_id: Vec<usize> = Vec::new();
+
+    for value in highway_nodes.iter() {
+        entries.push([
+            f64::from_bits(value.1.coordinate.0),
+            f64::from_bits(value.1.coordinate.1),
+        ]);
+        entries_id.push(value.1.id);
+    }
     let tree: ImmutableKdTree<f64, 2> = ImmutableKdTree::new_from_slice(&entries);
-    return (tree, entries);
+    return (tree, entries_id);
 }
 
 fn main() {
@@ -328,12 +355,12 @@ fn main() {
     let (amenities, highways, highway_nodes, nodes_lut): (
         Vec<Node>,
         Vec<Way>,
-        HashSet<Node>,
+        HashMap<usize, Node>,
         BiHashMap<usize, usize>,
     ) = response_to_structures(response);
     println!("{:?}", amenities[0]);
     println!("{:?}", highways[0]);
-    let (search_tree, entries): (ImmutableKdTree<f64, 2>, Vec<[f64; 2]>) =
+    let (search_tree, entries): (ImmutableKdTree<f64, 2>, Vec<usize>) =
         create_kdtree(highway_nodes.clone());
     let path_graph = create_graph(
         amenities,
@@ -343,4 +370,6 @@ fn main() {
         search_tree,
         entries,
     );
+    println!("{:?}", path_graph.get_num_edges());
+    println!("{:?}", path_graph.get_num_nodes());
 }
