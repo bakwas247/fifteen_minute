@@ -1,10 +1,12 @@
-use std::collections::HashMap;
+use core::f64;
+use std::collections::{HashMap, HashSet};
 
+use std::ptr::null;
 use std::usize;
 
 use bimap::{BiHashMap, BiMap};
 use clap::Parser;
-use fast_paths::InputGraph;
+use fast_paths::{InputGraph, Weight};
 use geocoding::openstreetmap::{OpenstreetmapParams, OpenstreetmapResponse};
 use geocoding::Openstreetmap;
 use haversine_redux::Location;
@@ -16,6 +18,7 @@ use serde_json::Value;
 #[derive(Parser)]
 struct Cli {
     address: String,
+    distance: u64,
 }
 
 #[derive(Eq, Hash, PartialEq, Debug, Clone)]
@@ -32,12 +35,17 @@ struct Way {
     nodes: Vec<Node>,
 }
 
-fn get_overpass_json_response(coordinates: (f64, f64), delta: f64, url: String) -> Value {
+fn get_overpass_json_response(
+    coordinates: (f64, f64),
+    deltay: f64,
+    deltax: f64,
+    url: String,
+) -> Value {
     let bounding_box = (
-        (coordinates.1 - delta),
-        (coordinates.0 - delta),
-        (coordinates.1 + delta),
-        (coordinates.0 + delta),
+        (coordinates.1 - deltax),
+        (coordinates.0 - deltay * 2.0),
+        (coordinates.1 + deltax),
+        (coordinates.0 + deltay * 2.0),
     );
     let bounding_box_string = format!(
         "({},{},{},{})",
@@ -46,12 +54,12 @@ fn get_overpass_json_response(coordinates: (f64, f64), delta: f64, url: String) 
     let query = format!(
         r##"
 [out:json]
-[timeout:25];
+[timeout:60];
 (
-    nwr["amenity"]{bbox};
-    nwr["shop"]{bbox};
-    way[highway][highway!=service][highway=footway][access!=private]{bbox};
-    way[highway][highway!=service][sidewalk][access!=private]{bbox};
+    nwr["amenity"][type!=relation][type!=multipolygon]{bbox};
+    nwr["shop"][type!=relation][type!=multipolygon]{bbox};
+    way[highway][highway!=service][highway=footway][access!=private][type!=relation][type!=multipolygon]{bbox};
+    way[highway][highway!=service][sidewalk][access!=private][type!=relation][type!=multipolygon]{bbox};
 );
 out geom;
 "##,
@@ -98,7 +106,8 @@ fn response_to_structures(
                 let temp_lat;
                 let temp_lon;
                 let temp_id;
-                if response["elements"][index]["type"].to_string() != r##""way""## {
+                println!("{:?}", response["elements"][index]);
+                if response["elements"][index]["type"].to_string() == r##""node""## {
                     temp_lat = response["elements"][index]["lat"]
                         .to_string()
                         .parse::<f64>()
@@ -326,6 +335,7 @@ fn create_graph(
     }
 
     input_graph.freeze();
+    let _edge_count = input_graph.get_num_edges();
     return input_graph;
 }
 
@@ -344,13 +354,66 @@ fn create_kdtree(highway_nodes: HashMap<usize, Node>) -> (ImmutableKdTree<f64, 2
     return (tree, entries_id);
 }
 
+fn cull_amenities(
+    amenities: Vec<Node>,
+    path_graph: InputGraph,
+    nearest_node: u64,
+    node_lut: BiHashMap<usize, usize>,
+    distance: u64,
+) -> Vec<Node> {
+    let mut amenity_hashset: HashSet<Node> = HashSet::new();
+    for amenity in amenities.iter() {
+        amenity_hashset.insert(amenity.clone());
+    }
+    let fast_graph = fast_paths::prepare(&path_graph);
+
+    // calculate the shortest path between nodes with ID 8 and 6
+
+    let new_amenity_list: Vec<Node> = amenity_hashset
+        .iter()
+        .map(|node: &Node| {
+            let shortest_path = fast_paths::calc_path(
+                &fast_graph,
+                nearest_node as usize,
+                get_graph_id(node.id, &node_lut),
+            );
+            let mut safe = 0;
+
+            match shortest_path {
+                Some(p) => {
+                    // the weight of the shortest path
+                    let weight = p.get_weight();
+
+                    // all nodes of the shortest path (including source and target)
+                    let nodes = p.get_nodes();
+
+                    if weight < distance as usize {
+                        safe = 1;
+                    }
+                }
+                None => {
+                    safe = 0;
+                }
+            }
+            if safe == 1 {
+                return node.clone();
+            } else {
+                return node.clone();
+            }
+        })
+        .collect();
+
+    return new_amenity_list;
+}
+
 fn main() {
     let args = Cli::parse();
-    let delta: f64 = 0.002;
+    let deltay: f64 = (args.distance as f64 / 111000.0).abs();
     let url = get_active_url();
     println!("{}", &args.address);
     let coordinates = get_address_coordinates(args.address);
-    let response: Value = get_overpass_json_response(coordinates, delta, url);
+    let deltax: f64 = (deltay / coordinates.1.cos()).abs();
+    let response: Value = get_overpass_json_response(coordinates, deltay, deltax, url);
     // println!("{}", response["version"]);
     let (amenities, highways, highway_nodes, nodes_lut): (
         Vec<Node>,
@@ -362,14 +425,22 @@ fn main() {
     println!("{:?}", highways[0]);
     let (search_tree, entries): (ImmutableKdTree<f64, 2>, Vec<usize>) =
         create_kdtree(highway_nodes.clone());
+    let nearest: NearestNeighbour<f64, u64> =
+        search_tree.nearest_one::<SquaredEuclidean>(&[coordinates.0, coordinates.1]);
     let path_graph = create_graph(
-        amenities,
+        amenities.clone(),
         highways,
         highway_nodes,
-        nodes_lut,
+        nodes_lut.clone(),
         search_tree,
         entries,
     );
-    println!("{:?}", path_graph.get_num_edges());
-    println!("{:?}", path_graph.get_num_nodes());
+    let new_amenities = cull_amenities(
+        amenities,
+        path_graph,
+        nearest.item,
+        nodes_lut,
+        args.distance,
+    );
+    println!("{:?}", new_amenities);
 }
