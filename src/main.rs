@@ -26,16 +26,12 @@ struct Element {
     tags: Tags,
 }
 
-fn main() {
-    let args = Cli::parse();
-    let delta: f64 = 0.002;
-    println!("{}", &args.address);
-    let osm = Openstreetmap::new();
-    let params = OpenstreetmapParams::new(&args.address)
-        .with_addressdetails(true)
-        .build();
-    let res: OpenstreetmapResponse<f64> = osm.forward_full(&params).unwrap();
-    let coordinates = res.features[0].geometry.coordinates;
+fn get_overpass_json_response(
+    query: String,
+    coordinates: (f64, f64),
+    delta: f64,
+    url: String,
+) -> Value {
     let bounding_box = (
         (coordinates.1 - delta),
         (coordinates.0 - delta),
@@ -46,34 +42,39 @@ fn main() {
         "({},{},{},{})",
         bounding_box.0, bounding_box.1, bounding_box.2, bounding_box.3
     );
-    let url = "https://maps.mail.ru/osm/tools/overpass/api/interpreter";
-    let query = format!(
-        r##"[out:json]
-[timeout:25];
-(
-    nwr["amenity"]{};
-    nwr["shop"]{};
-);
-out geom;"##,
-        bounding_box_string, bounding_box_string
-    );
-    println!("{}", query);
     let res = Client::new().post(url).body(query).send();
-    // print!("{}", res.unwrap().text().unwrap());
     let response: Value = res.unwrap().json().unwrap();
-    // println!("{}", response["version"]);
+    return response;
+}
+
+fn get_address_coordinates(address: String) -> (f64, f64) {
+    let osm = Openstreetmap::new();
+    let params = OpenstreetmapParams::new(&address)
+        .with_addressdetails(true)
+        .build();
+    let res: OpenstreetmapResponse<f64> = osm.forward_full(&params).unwrap();
+    let coordinates = res.features[0].geometry.coordinates;
+    return coordinates;
+}
+
+fn get_active_url() -> String {
+    let url: String = "https://maps.mail.ru/osm/tools/overpass/api/interpreter".to_owned();
+    return url;
+}
+
+fn response_to_structures(response: Value) -> Vec<String> {
     let mut failed = false;
     let mut index = 0;
-    let mut list: Vec<String> = Vec::new();
+    let mut amenities: Vec<String> = Vec::new();
     while failed == false {
         if response["elements"][index] != json!(null) {
             if response["elements"][index]["tags"]["name"] != json!(null) {
-                list.push(response["elements"][index]["tags"]["name"].to_string());
+                amenities.push(response["elements"][index]["tags"]["name"].to_string());
             } else {
                 if response["elements"][index]["tags"]["amenity"] != json!(null) {
-                    list.push(response["elements"][index]["tags"]["amenity"].to_string());
+                    // list.push(response["elements"][index]["tags"]["amenity"].to_string());
                 } else {
-                    list.push(response["elements"][index]["tags"]["shop"].to_string());
+                    amenities.push(response["elements"][index]["tags"]["shop"].to_string());
                 }
             }
             index += 1;
@@ -81,5 +82,40 @@ out geom;"##,
             failed = true;
         }
     }
-    println!("{:?}", list);
+    return amenities;
+}
+
+fn main() {
+    let args = Cli::parse();
+    let delta: f64 = 0.002;
+    let url = get_active_url();
+    println!("{}", &args.address);
+    let coordinates = get_address_coordinates(args.address);
+    let bounding_box = (
+        (coordinates.1 - delta),
+        (coordinates.0 - delta),
+        (coordinates.1 + delta),
+        (coordinates.0 + delta),
+    );
+    let bounding_box_string = format!(
+        "({},{},{},{})",
+        bounding_box.0, bounding_box.1, bounding_box.2, bounding_box.3
+    );
+    let query = format!(
+        r##"
+[out:json]
+[timeout:25];
+(
+    nwr["amenity"]{bbox};
+    nwr["shop"]{bbox};
+);
+out geom;
+"##,
+        bbox = bounding_box_string
+    );
+    println!("{}", query);
+    let response: Value = get_overpass_json_response(query, coordinates, delta, url);
+    // println!("{}", response["version"]);
+    let amenities: Vec<String> = response_to_structures(response);
+    println!("{:?}", amenities);
 }
