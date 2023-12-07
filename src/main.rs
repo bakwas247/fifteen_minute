@@ -1,12 +1,11 @@
 use core::f64;
 use std::collections::{HashMap, HashSet};
 
-use std::ptr::null;
 use std::usize;
 
 use bimap::{BiHashMap, BiMap};
 use clap::Parser;
-use fast_paths::{InputGraph, Weight};
+use fast_paths::InputGraph;
 use geocoding::openstreetmap::{OpenstreetmapParams, OpenstreetmapResponse};
 use geocoding::Openstreetmap;
 use haversine_redux::Location;
@@ -385,7 +384,7 @@ fn cull_amenities(
                     let weight = p.get_weight();
 
                     // all nodes of the shortest path (including source and target)
-                    let nodes = p.get_nodes();
+                    // let nodes = p.get_nodes();
 
                     if weight < distance as usize {
                         safe = 1;
