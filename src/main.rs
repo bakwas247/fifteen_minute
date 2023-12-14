@@ -578,7 +578,6 @@ fn cull_poi_cache(
                 f64::from_bits(amenity.coordinate.1),
             );
             let end: Location = Location::new(coordinates.0, coordinates.1);
-            println!("{:?}", (start.kilometers_to(&end) * 1000.0));
             if (start.kilometers_to(&end) * 1000.0) < distance as f64 {
                 Some(amenity.clone())
             } else {
