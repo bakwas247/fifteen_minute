@@ -15,11 +15,11 @@ use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use serde_json::Value;
+use std::fs;
 use std::fs::File;
 use std::io::stdin as input;
 use std::io::{BufRead, BufReader, Error, Write};
 use std::usize;
-use std::{fs, time};
 
 #[derive(Parser)]
 struct Cli {
@@ -563,7 +563,6 @@ fn cull_poi_cache(
     let mut highways_path = File::open(&format!("./Cache/{}/highways.json", city)).unwrap();
     let mut highway_nodes_path =
         File::open(&format!("./Cache/{}/highway_nodes.json", city)).unwrap();
-    sleep(time::Duration::from_secs(3));
     let buffered = BufReader::new(amenities_path);
     let amenities: Vec<Node> = serde_json::from_reader(buffered).unwrap();
     let buffered2 = BufReader::new(highways_path);
