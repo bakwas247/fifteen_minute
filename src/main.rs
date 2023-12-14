@@ -22,9 +22,9 @@ use std::usize;
 
 #[derive(Parser)]
 struct Cli {
-    arg1: String,
-    arg2: String,
-    arg3: String,
+    arg1: Option<String>,
+    arg2: Option<String>,
+    arg3: Option<String>,
     arg4: Option<String>,
 }
 
@@ -621,19 +621,22 @@ fn main() {
         "Please enter 1 for searching online, or 2 for searching with cache!\n"
     );
     print!("{}", message);
-    let buffer = require_specific_input(args.arg1, vec!["1".to_string(), "2".to_string()]);
+    let buffer = require_specific_input(
+        args.arg1.unwrap_or("".to_string()),
+        vec!["1".to_string(), "2".to_string()],
+    );
     if buffer == "1".to_string() {
         let mut address = String::new();
         let mut distance = String::new();
         println!("Please enter an Address");
-        if args.arg2 != "" {
-            address = args.arg2
+        if args.arg2.clone().unwrap() != "" {
+            address = args.arg2.unwrap();
         } else {
             get_input(&mut address);
         }
         println!("Please enter maximum distance");
-        if args.arg3 != "" {
-            distance = args.arg3
+        if args.arg3.clone().unwrap() != "" {
+            distance = args.arg3.unwrap()
         } else {
             get_input(&mut distance);
         }
@@ -648,8 +651,8 @@ fn main() {
     } else if buffer == "2".to_string() {
         let mut city = String::new();
         println!("Please enter a City Name");
-        if args.arg2 != "" {
-            city = args.arg2
+        if args.arg2.clone().unwrap() != "" {
+            city = args.arg2.unwrap()
         } else {
             get_input(&mut city);
         }
@@ -664,8 +667,8 @@ fn main() {
         let mut address = String::new();
         let mut distance = String::new();
         println!("Please enter an Address");
-        if args.arg3 != "" {
-            address = args.arg3
+        if args.arg3.clone().unwrap() != "" {
+            address = args.arg3.unwrap()
         } else {
             get_input(&mut address);
         }
