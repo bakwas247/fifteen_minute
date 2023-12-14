@@ -532,20 +532,20 @@ fn write_poi_cache(address: String) {
     let _ = write!(
         &mut amenities_path,
         "{}",
-        serde_json::to_string(&amenities).unwrap()
+        serde_json::to_string_pretty(&amenities).unwrap()
     );
     let mut highways_path = File::create(&format!("./Cache/{}/highways.json", address)).unwrap();
     let _ = write!(
         &mut highways_path,
         "{}",
-        serde_json::to_string(&highways).unwrap()
+        serde_json::to_string_pretty(&highways).unwrap()
     );
     let mut highway_nodes_path =
         File::create(&format!("./Cache/{}/highway_nodes.json", address)).unwrap();
     let _ = write!(
         &mut highway_nodes_path,
         "{}",
-        serde_json::to_string(&highway_nodes).unwrap()
+        serde_json::to_string_pretty(&highway_nodes).unwrap()
     );
 }
 
