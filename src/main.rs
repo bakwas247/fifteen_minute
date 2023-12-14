@@ -1,11 +1,10 @@
 use core::f64;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::thread::sleep;
 
 use bimap::{BiHashMap, BiMap};
 use clap::Parser;
-use fast_paths::{InputGraph, Weight};
+use fast_paths::InputGraph;
 use geocoding::openstreetmap::{OpenstreetmapParams, OpenstreetmapResponse};
 use geocoding::Openstreetmap;
 use haversine_redux::Location;
@@ -17,8 +16,8 @@ use serde_json::json;
 use serde_json::Value;
 use std::fs;
 use std::fs::File;
-use std::io::stdin as input;
-use std::io::{BufRead, BufReader, Error, Write};
+use std::io::BufReader;
+use std::io::{stdin as input, Write};
 use std::usize;
 
 #[derive(Parser)]
@@ -244,38 +243,6 @@ fn response_to_structures(
     return (amenities, highways, highway_nodes, nodes_lookup_table);
 }
 
-// fn get_node_id(graph_id: usize, node_lut: &BiHashMap<usize, usize>) -> usize {
-//     let res: usize = node_lut
-//         .get_by_left(&graph_id)
-//         .unwrap_or(&usize::MAX)
-//         .clone();
-//     return res;
-// }
-
-// fn get_node_from_coord(coord: (u64, u64), nodes: &HashSet<Node>) -> Node {
-//     let res: Node = nodes
-//         .get(&coord)
-//         .unwrap_or(&Node {
-//             name: None,
-//             coordinate: (u64::MAX, u64::MAX),
-//             id: (usize::MAX),
-//         })
-//         .clone();
-//     return res;
-// }
-
-// fn get_node_from_id(id: usize, nodes: &HashSet<Node>) -> Node {
-//     let res: Node = nodes
-//         .get(&id)
-//         .unwrap_or(&Node {
-//             name: None,
-//             coordinate: (u64::MAX, u64::MAX),
-//             id: (usize::MAX),
-//         })
-//         .clone();
-//     return res;
-// }
-
 fn get_graph_id(node_id: usize, node_lut: &BiHashMap<usize, usize>) -> usize {
     let res = node_lut
         .get_by_right(&node_id)
@@ -451,7 +418,7 @@ fn get_input(buffer: &mut String) {
 fn require_specific_input(conditions: Vec<String>) -> String {
     let mut buffer = String::new();
     let mut done = false;
-    while (!done) {
+    while !done {
         buffer = "".to_string();
         get_input(&mut buffer);
         for condition in conditions.iter() {
@@ -559,10 +526,9 @@ fn cull_poi_cache(
     HashMap<usize, Node>,
     BiHashMap<usize, usize>,
 ) {
-    let mut amenities_path = File::open(&format!("./Cache/{}/amenities.json", city)).unwrap();
-    let mut highways_path = File::open(&format!("./Cache/{}/highways.json", city)).unwrap();
-    let mut highway_nodes_path =
-        File::open(&format!("./Cache/{}/highway_nodes.json", city)).unwrap();
+    let amenities_path = File::open(&format!("./Cache/{}/amenities.json", city)).unwrap();
+    let highways_path = File::open(&format!("./Cache/{}/highways.json", city)).unwrap();
+    let highway_nodes_path = File::open(&format!("./Cache/{}/highway_nodes.json", city)).unwrap();
     let buffered = BufReader::new(amenities_path);
     let amenities: Vec<Node> = serde_json::from_reader(buffered).unwrap();
     let buffered2 = BufReader::new(highways_path);
@@ -653,7 +619,7 @@ fn main() {
         let mut distance = String::new();
         get_input(&mut address);
         get_input(&mut distance);
-        let amenities = get_poi_near_address(address, distance.parse::<u64>().unwrap_or(1500));
+        let _amenities = get_poi_near_address(address, distance.parse::<u64>().unwrap_or(1500));
     } else if buffer == "2".to_string() {
         let mut city = String::new();
         get_input(&mut city);
@@ -666,6 +632,6 @@ fn main() {
         let mut distance = String::new();
         get_input(&mut address);
         get_input(&mut distance);
-        let amenities = get_poi_from_cache(city, address, distance.parse::<u64>().unwrap_or(1500));
+        let _amenities = get_poi_from_cache(city, address, distance.parse::<u64>().unwrap_or(1500));
     }
 }
