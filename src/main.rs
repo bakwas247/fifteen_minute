@@ -25,7 +25,7 @@ struct Cli {
     arg1: String,
     arg2: String,
     arg3: String,
-    arg4: String,
+    arg4: Option<String>,
 }
 
 #[derive(Eq, Hash, PartialEq, Debug, Clone, Serialize, Deserialize)]
@@ -638,7 +638,13 @@ fn main() {
             get_input(&mut distance);
         }
 
-        let _amenities = get_poi_near_address(address, distance.parse::<u64>().unwrap_or(1500));
+        let amenities = get_poi_near_address(address, distance.parse::<u64>().unwrap_or(1500));
+        let mut amenities_path = File::create(&format!("./nearby_poi.json")).unwrap();
+        let _ = write!(
+            &mut amenities_path,
+            "{}",
+            serde_json::to_string_pretty(&amenities).unwrap()
+        );
     } else if buffer == "2".to_string() {
         let mut city = String::new();
         println!("Please enter a City Name");
@@ -664,11 +670,17 @@ fn main() {
             get_input(&mut address);
         }
         println!("Please enter maximum distance");
-        if args.arg4 != "" {
-            distance = args.arg4
+        if args.arg4.clone().unwrap() != "" {
+            distance = args.arg4.unwrap()
         } else {
             get_input(&mut distance);
         }
-        let _amenities = get_poi_from_cache(city, address, distance.parse::<u64>().unwrap_or(1500));
+        let amenities = get_poi_from_cache(city, address, distance.parse::<u64>().unwrap_or(1500));
+        let mut amenities_path = File::create(&format!("./nearby_poi.json")).unwrap();
+        let _ = write!(
+            &mut amenities_path,
+            "{}",
+            serde_json::to_string_pretty(&amenities).unwrap()
+        );
     }
 }
