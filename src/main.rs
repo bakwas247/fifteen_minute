@@ -48,10 +48,10 @@ fn get_overpass_json_response(
     url: String,
 ) -> Value {
     let bounding_box = (
-        (coordinates.0 - deltax),
-        (coordinates.1 - deltay * 2.0),
-        (coordinates.0 + deltax),
-        (coordinates.1 + deltay * 2.0),
+        (coordinates.0 - deltay),
+        (coordinates.1 - deltax),
+        (coordinates.0 + deltay),
+        (coordinates.1 + deltax),
     );
     let bounding_box_string = format!(
         "({},{},{},{})",
@@ -465,9 +465,8 @@ fn require_specific_input(conditions: Vec<String>) -> String {
 fn get_poi_near_address(address: String, distance: u64) -> Vec<Node> {
     let url = get_active_url();
     let deltay: f64 = (distance as f64 / 111000.0).abs();
-    println!("{}", address);
     let coordinates = get_address_coordinates(address);
-    let deltax: f64 = (deltay / coordinates.1.cos()).abs();
+    let deltax: f64 = (deltay / coordinates.0.to_radians().cos()).abs();
     let response: Value = get_overpass_json_response(coordinates, deltay, deltax, url);
     let (amenities, highways, highway_nodes, nodes_lut): (
         Vec<Node>,
@@ -514,9 +513,8 @@ fn get_poi_from_cache(city: String, address: String, distance: u64) -> Vec<Node>
 fn write_poi_cache(address: String) {
     let url = get_active_url();
     let deltay: f64 = 10000.0 / 111000.0;
-    println!("{}", address);
     let coordinates = get_address_coordinates(address.clone());
-    let deltax: f64 = (deltay / coordinates.1.cos()).abs();
+    let deltax: f64 = (deltay / coordinates.0.cos()).abs();
     let response: Value = get_overpass_json_response(coordinates, deltay, deltax, url);
     // println!("{}", response["version"]);
     let (amenities, highways, highway_nodes, _): (
