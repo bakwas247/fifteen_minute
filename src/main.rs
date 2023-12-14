@@ -26,6 +26,7 @@ struct Cli {
     arg2: Option<String>,
     arg3: Option<String>,
     arg4: Option<String>,
+    arg5: Option<String>,
 }
 
 #[derive(Eq, Hash, PartialEq, Debug, Clone, Serialize, Deserialize)]
@@ -465,10 +466,15 @@ fn get_poi_near_address(address: String, distance: u64) -> Vec<Node> {
     return new_amentites.clone();
 }
 
-fn get_poi_from_cache(city: String, address: String, distance: u64) -> Vec<Node> {
+fn get_poi_from_cache(
+    city: String,
+    radius_string: String,
+    address: String,
+    distance: u64,
+) -> Vec<Node> {
     let coordinates = get_address_coordinates(address.clone());
     let (amenities, highways, highway_nodes, nodes_lut) =
-        cull_poi_cache(coordinates, city, distance);
+        cull_poi_cache(coordinates, radius_string, city, distance);
     let (search_tree, entries): (ImmutableKdTree<f64, 2>, Vec<usize>) =
         create_kdtree(highway_nodes.clone());
     let nearest: NearestNeighbour<f64, u64> =
@@ -485,9 +491,9 @@ fn get_poi_from_cache(city: String, address: String, distance: u64) -> Vec<Node>
     return new_amentites.clone();
 }
 
-fn write_poi_cache(address: String) {
+fn write_poi_cache(radius_string: String, address: String) {
     let url = get_active_url();
-    let deltay: f64 = 10000.0 / 111000.0;
+    let deltay: f64 = radius_string.parse::<f64>().unwrap_or(10000.0) / 111000.0;
     let coordinates = get_address_coordinates(address.clone());
     let deltax: f64 = (deltay / coordinates.0.cos()).abs();
     let response: Value = get_overpass_json_response(coordinates, deltay, deltax, url);
@@ -502,20 +508,31 @@ fn write_poi_cache(address: String) {
     let bind = format!("./Cache/{}", address);
     let path = Path::new(&bind);
     let _ = fs::create_dir_all(path);
-    let mut amenities_path = File::create(&format!("./Cache/{}/amenities.json", address)).unwrap();
+    let mut amenities_path = File::create(&format!(
+        "./Cache/{}_{}/amenities.json",
+        address, radius_string
+    ))
+    .unwrap();
     let _ = write!(
         &mut amenities_path,
         "{}",
         serde_json::to_string_pretty(&amenities).unwrap()
     );
-    let mut highways_path = File::create(&format!("./Cache/{}/highways.json", address)).unwrap();
+    let mut highways_path = File::create(&format!(
+        "./Cache/{}_{}/highways.json",
+        address, radius_string
+    ))
+    .unwrap();
     let _ = write!(
         &mut highways_path,
         "{}",
         serde_json::to_string_pretty(&highways).unwrap()
     );
-    let mut highway_nodes_path =
-        File::create(&format!("./Cache/{}/highway_nodes.json", address)).unwrap();
+    let mut highway_nodes_path = File::create(&format!(
+        "./Cache/{}_{}/highway_nodes.json",
+        address, radius_string
+    ))
+    .unwrap();
     let _ = write!(
         &mut highway_nodes_path,
         "{}",
@@ -525,6 +542,7 @@ fn write_poi_cache(address: String) {
 
 fn cull_poi_cache(
     coordinates: (f64, f64),
+    radius_string: String,
     city: String,
     distance: u64,
 ) -> (
@@ -533,9 +551,18 @@ fn cull_poi_cache(
     HashMap<usize, Node>,
     BiHashMap<usize, usize>,
 ) {
-    let amenities_path = File::open(&format!("./Cache/{}/amenities.json", city)).unwrap();
-    let highways_path = File::open(&format!("./Cache/{}/highways.json", city)).unwrap();
-    let highway_nodes_path = File::open(&format!("./Cache/{}/highway_nodes.json", city)).unwrap();
+    let amenities_path = File::open(&format!(
+        "./Cache/{}_{}/amenities.json",
+        city, radius_string
+    ))
+    .unwrap();
+    let highways_path =
+        File::open(&format!("./Cache/{}_{}/highways.json", city, radius_string)).unwrap();
+    let highway_nodes_path = File::open(&format!(
+        "./Cache/{}_{}/highway_nodes.json",
+        city, radius_string
+    ))
+    .unwrap();
     let buffered = BufReader::new(amenities_path);
     let amenities: Vec<Node> = serde_json::from_reader(buffered).unwrap();
     let buffered2 = BufReader::new(highways_path);
@@ -629,13 +656,13 @@ fn main() {
         let mut address = String::new();
         let mut distance = String::new();
         println!("Please enter an Address");
-        if args.arg2.clone().unwrap() != "" {
+        if args.arg2.clone().unwrap_or("".to_string()) != "" {
             address = args.arg2.unwrap();
         } else {
             get_input(&mut address);
         }
         println!("Please enter maximum distance");
-        if args.arg3.clone().unwrap() != "" {
+        if args.arg3.clone().unwrap_or("".to_string()) != "" {
             distance = args.arg3.unwrap()
         } else {
             get_input(&mut distance);
@@ -650,35 +677,47 @@ fn main() {
         );
     } else if buffer == "2".to_string() {
         let mut city = String::new();
+        let mut radius_string = String::new();
         println!("Please enter a City Name");
-        if args.arg2.clone().unwrap() != "" {
+        if args.arg2.clone().unwrap_or("".to_string()) != "" {
             city = args.arg2.unwrap()
         } else {
             get_input(&mut city);
         }
-        let string_path = format!("./Cache/{}/amenities.json", city);
+        println!("Please enter a node collection radius in metres");
+        if args.arg3.clone().unwrap_or("".to_string()) != "" {
+            radius_string = args.arg3.unwrap()
+        } else {
+            get_input(&mut radius_string);
+        }
+        let string_path = format!("./Cache/{}_{}/amenities.json", city, radius_string);
         let path = Path::new(&string_path);
         println!("Looking for cache...");
         if !path.exists() {
             println!("No Cache, creating...");
-            write_poi_cache(city.clone());
+            write_poi_cache(radius_string.clone(), city.clone());
         }
         println!("Cache Found!");
         let mut address = String::new();
         let mut distance = String::new();
         println!("Please enter an Address");
-        if args.arg3.clone().unwrap() != "" {
-            address = args.arg3.unwrap()
+        if args.arg4.clone().unwrap_or("".to_string()) != "" {
+            address = args.arg4.unwrap()
         } else {
             get_input(&mut address);
         }
         println!("Please enter maximum distance");
-        if args.arg4.clone().unwrap() != "" {
-            distance = args.arg4.unwrap()
+        if args.arg5.clone().unwrap_or("".to_string()) != "" {
+            distance = args.arg5.unwrap()
         } else {
             get_input(&mut distance);
         }
-        let amenities = get_poi_from_cache(city, address, distance.parse::<u64>().unwrap_or(1500));
+        let amenities = get_poi_from_cache(
+            city,
+            radius_string,
+            address,
+            distance.parse::<u64>().unwrap_or(1500),
+        );
         let mut amenities_path = File::create(&format!("./nearby_poi.json")).unwrap();
         let _ = write!(
             &mut amenities_path,
