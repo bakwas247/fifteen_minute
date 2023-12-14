@@ -19,7 +19,7 @@
                     "kind": "bin"
                 }
             },
-            "args": ["8 Roxburgh Place", "1000"],
+            "args": ["2", "Edinburgh", "8 Roxburgh Place", "1000"],
             "cwd": "${workspaceFolder}"
         },
         {

@@ -22,8 +22,10 @@ use std::usize;
 
 #[derive(Parser)]
 struct Cli {
-    address: String,
-    distance: u64,
+    arg1: String,
+    arg2: String,
+    arg3: String,
+    arg4: String,
 }
 
 #[derive(Eq, Hash, PartialEq, Debug, Clone, Serialize, Deserialize)]
@@ -415,9 +417,14 @@ fn get_input(buffer: &mut String) {
     trim_newline(buffer);
 }
 
-fn require_specific_input(conditions: Vec<String>) -> String {
+fn require_specific_input(arg: String, conditions: Vec<String>) -> String {
     let mut buffer = String::new();
     let mut done = false;
+    for condition in conditions.iter() {
+        if &arg == condition {
+            return arg;
+        }
+    }
     while !done {
         buffer = "".to_string();
         get_input(&mut buffer);
@@ -608,30 +615,60 @@ fn cull_poi_cache(
 }
 
 fn main() {
+    let args = Cli::parse();
     let message = concat!(
         "Welcome to the point of interest searcher!\n",
         "Please enter 1 for searching online, or 2 for searching with cache!\n"
     );
     print!("{}", message);
-    let buffer = require_specific_input(vec!["1".to_string(), "2".to_string()]);
+    let buffer = require_specific_input(args.arg1, vec!["1".to_string(), "2".to_string()]);
     if buffer == "1".to_string() {
         let mut address = String::new();
         let mut distance = String::new();
-        get_input(&mut address);
-        get_input(&mut distance);
+        println!("Please enter an Address");
+        if args.arg2 != "" {
+            address = args.arg2
+        } else {
+            get_input(&mut address);
+        }
+        println!("Please enter maximum distance");
+        if args.arg3 != "" {
+            distance = args.arg3
+        } else {
+            get_input(&mut distance);
+        }
+
         let _amenities = get_poi_near_address(address, distance.parse::<u64>().unwrap_or(1500));
     } else if buffer == "2".to_string() {
         let mut city = String::new();
-        get_input(&mut city);
+        println!("Please enter a City Name");
+        if args.arg2 != "" {
+            city = args.arg2
+        } else {
+            get_input(&mut city);
+        }
         let string_path = format!("./Cache/{}/amenities.json", city);
         let path = Path::new(&string_path);
+        println!("Looking for cache...");
         if !path.exists() {
+            println!("No Cache, creating...");
             write_poi_cache(city.clone());
         }
+        println!("Cache Found!");
         let mut address = String::new();
         let mut distance = String::new();
-        get_input(&mut address);
-        get_input(&mut distance);
+        println!("Please enter an Address");
+        if args.arg3 != "" {
+            address = args.arg3
+        } else {
+            get_input(&mut address);
+        }
+        println!("Please enter maximum distance");
+        if args.arg4 != "" {
+            distance = args.arg4
+        } else {
+            get_input(&mut distance);
+        }
         let _amenities = get_poi_from_cache(city, address, distance.parse::<u64>().unwrap_or(1500));
     }
 }
