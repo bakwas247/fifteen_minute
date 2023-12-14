@@ -5,7 +5,7 @@ use std::thread::sleep;
 
 use bimap::{BiHashMap, BiMap};
 use clap::Parser;
-use fast_paths::InputGraph;
+use fast_paths::{InputGraph, Weight};
 use geocoding::openstreetmap::{OpenstreetmapParams, OpenstreetmapResponse};
 use geocoding::Openstreetmap;
 use haversine_redux::Location;
@@ -398,7 +398,7 @@ fn cull_amenities(
 
     let new_amenity_list: Vec<Node> = amenity_hashset
         .iter()
-        .map(|node: &Node| {
+        .filter_map(|node: &Node| {
             let shortest_path = fast_paths::calc_path(
                 &fast_graph,
                 nearest_node as usize,
@@ -415,6 +415,7 @@ fn cull_amenities(
                     // let nodes = p.get_nodes();
 
                     if weight < distance as usize {
+                        println!("{:?}", (weight, node));
                         safe = 1;
                     }
                 }
@@ -423,9 +424,9 @@ fn cull_amenities(
                 }
             }
             if safe == 1 {
-                return node.clone();
+                Some(node.clone())
             } else {
-                return node.clone();
+                None
             }
         })
         .collect();
@@ -655,9 +656,6 @@ fn main() {
         get_input(&mut address);
         get_input(&mut distance);
         let amenities = get_poi_near_address(address, distance.parse::<u64>().unwrap_or(1500));
-        for amenity in amenities.iter() {
-            println!("{:?}", amenity);
-        }
     } else if buffer == "2".to_string() {
         let mut city = String::new();
         get_input(&mut city);
@@ -671,8 +669,5 @@ fn main() {
         get_input(&mut address);
         get_input(&mut distance);
         let amenities = get_poi_from_cache(city, address, distance.parse::<u64>().unwrap_or(1500));
-        for amenity in amenities.iter() {
-            println!("{:?}", amenity);
-        }
     }
 }
