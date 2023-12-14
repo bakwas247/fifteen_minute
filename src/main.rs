@@ -505,7 +505,7 @@ fn write_poi_cache(radius_string: String, address: String) {
         BiHashMap<usize, usize>,
     ) = response_to_structures(response);
     // println!("{:?}", serde_json::to_string(&amenities));
-    let bind = format!("./Cache/{}", address);
+    let bind = format!("./Cache/{}_{}", address, radius_string);
     let path = Path::new(&bind);
     let _ = fs::create_dir_all(path);
     let mut amenities_path = File::create(&format!(
