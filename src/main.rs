@@ -4,7 +4,6 @@ use std::path::Path;
 use std::thread::sleep;
 
 use bimap::{BiHashMap, BiMap};
-use bincode::{config, Decode, Encode};
 use clap::Parser;
 use fast_paths::InputGraph;
 use geocoding::openstreetmap::{OpenstreetmapParams, OpenstreetmapResponse};
@@ -13,6 +12,7 @@ use haversine_redux::Location;
 use kiddo::{ImmutableKdTree, NearestNeighbour, SquaredEuclidean};
 use rayon::prelude::*;
 use reqwest::blocking::Client;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use serde_json::Value;
 use std::fs::File;
@@ -27,7 +27,7 @@ struct Cli {
     distance: u64,
 }
 
-#[derive(Eq, Hash, PartialEq, Debug, Clone, Encode, Decode)]
+#[derive(Eq, Hash, PartialEq, Debug, Clone, Serialize, Deserialize)]
 
 struct Node {
     name: Option<String>,
@@ -35,7 +35,7 @@ struct Node {
     id: usize,
 }
 
-#[derive(Eq, Hash, PartialEq, Debug, Clone, Encode, Decode)]
+#[derive(Eq, Hash, PartialEq, Debug, Clone, Serialize, Deserialize)]
 struct Way {
     id: usize,
     nodes: Vec<Node>,
@@ -48,10 +48,10 @@ fn get_overpass_json_response(
     url: String,
 ) -> Value {
     let bounding_box = (
-        (coordinates.1 - deltax),
-        (coordinates.0 - deltay * 2.0),
-        (coordinates.1 + deltax),
-        (coordinates.0 + deltay * 2.0),
+        (coordinates.0 - deltax),
+        (coordinates.1 - deltay * 2.0),
+        (coordinates.0 + deltax),
+        (coordinates.1 + deltay * 2.0),
     );
     let bounding_box_string = format!(
         "({},{},{},{})",
@@ -83,8 +83,9 @@ fn get_address_coordinates(address: String) -> (f64, f64) {
         .with_addressdetails(true)
         .build();
     let res: OpenstreetmapResponse<f64> = osm.forward_full(&params).unwrap();
-    let coordinates = res.features[0].geometry.coordinates;
-    return coordinates;
+    let coordinates: (f64, f64) = res.features[0].geometry.coordinates;
+    let new_coordinates: (f64, f64) = (coordinates.1, coordinates.0);
+    return new_coordinates;
 }
 
 fn get_active_url() -> String {
@@ -511,7 +512,6 @@ fn get_poi_from_cache(city: String, address: String, distance: u64) -> Vec<Node>
 }
 
 fn write_poi_cache(address: String) {
-    let config = config::standard();
     let url = get_active_url();
     let deltay: f64 = 10000.0 / 111000.0;
     println!("{}", address);
@@ -529,13 +529,25 @@ fn write_poi_cache(address: String) {
     let bind = format!("./Cache/{}", address);
     let path = Path::new(&bind);
     let _ = fs::create_dir_all(path);
-    let mut amenities_path = File::create(&format!("./Cache/{}/amenities.bin", address)).unwrap();
-    let _ = bincode::encode_into_std_write(amenities, &mut amenities_path, config);
-    let mut highways_path = File::create(&format!("./Cache/{}/highways.bin", address)).unwrap();
-    let _ = bincode::encode_into_std_write(highways, &mut highways_path, config);
+    let mut amenities_path = File::create(&format!("./Cache/{}/amenities.json", address)).unwrap();
+    let _ = write!(
+        &mut amenities_path,
+        "{}",
+        serde_json::to_string(&amenities).unwrap()
+    );
+    let mut highways_path = File::create(&format!("./Cache/{}/highways.json", address)).unwrap();
+    let _ = write!(
+        &mut highways_path,
+        "{}",
+        serde_json::to_string(&highways).unwrap()
+    );
     let mut highway_nodes_path =
-        File::create(&format!("./Cache/{}/highway_nodes.bin", address)).unwrap();
-    let _ = bincode::encode_into_std_write(highway_nodes, &mut highway_nodes_path, config);
+        File::create(&format!("./Cache/{}/highway_nodes.json", address)).unwrap();
+    let _ = write!(
+        &mut highway_nodes_path,
+        "{}",
+        serde_json::to_string(&highway_nodes).unwrap()
+    );
 }
 
 fn cull_poi_cache(
@@ -548,28 +560,26 @@ fn cull_poi_cache(
     HashMap<usize, Node>,
     BiHashMap<usize, usize>,
 ) {
-    let config = config::standard();
-    let mut amenities_path = File::open(&format!("./Cache/{}/amenities.bin", city)).unwrap();
-    let mut highways_path = File::open(&format!("./Cache/{}/highways.bin", city)).unwrap();
+    let mut amenities_path = File::open(&format!("./Cache/{}/amenities.json", city)).unwrap();
+    let mut highways_path = File::open(&format!("./Cache/{}/highways.json", city)).unwrap();
     let mut highway_nodes_path =
-        File::open(&format!("./Cache/{}/highway_nodes.bin", city)).unwrap();
+        File::open(&format!("./Cache/{}/highway_nodes.json", city)).unwrap();
     sleep(time::Duration::from_secs(3));
-    let mut buffered = BufReader::new(amenities_path.try_clone().unwrap());
-    let (amenities, _): (Vec<Node>, usize) =
-        bincode::decode_from_std_read(&mut amenities_path, config).unwrap();
-    let (highways, _): (Vec<Way>, usize) =
-        bincode::decode_from_std_read(&mut highways_path, config).unwrap();
-    let (highway_nodes, _): (HashMap<usize, Node>, usize) =
-        bincode::decode_from_std_read(&mut highway_nodes_path, config).unwrap();
+    let buffered = BufReader::new(amenities_path);
+    let amenities: Vec<Node> = serde_json::from_reader(buffered).unwrap();
+    let buffered2 = BufReader::new(highways_path);
+    let highways: Vec<Way> = serde_json::from_reader(buffered2).unwrap();
+    let buffered3 = BufReader::new(highway_nodes_path);
+    let highway_nodes: HashMap<usize, Node> = serde_json::from_reader(buffered3).unwrap();
     let new_amenities: Vec<Node> = amenities
-        .par_iter()
+        .iter()
         .filter_map(|amenity: &Node| {
             let start: Location = Location::new(
                 f64::from_bits(amenity.coordinate.0),
                 f64::from_bits(amenity.coordinate.1),
             );
             let end: Location = Location::new(coordinates.0, coordinates.1);
-
+            println!("{:?}", (start.kilometers_to(&end) * 1000.0));
             if (start.kilometers_to(&end) * 1000.0) < distance as f64 {
                 Some(amenity.clone())
             } else {
@@ -577,7 +587,7 @@ fn cull_poi_cache(
             }
         })
         .collect();
-    let new_highway_nodes: HashMap<usize, Node> = highway_nodes
+    let close_highway_nodes: HashMap<usize, Node> = highway_nodes
         .par_iter()
         .filter_map(|highway_node: (&usize, &Node)| {
             let start: Location = Location::new(
@@ -594,16 +604,21 @@ fn cull_poi_cache(
         })
         .collect();
 
+    let mut new_highway_nodes: HashMap<usize, Node> = HashMap::new();
+
     let new_highways: Vec<Way> = highways
-        .par_iter()
+        .iter()
         .filter_map(|highway: &Way| {
             let mut valid = false;
             for node in highway.nodes.iter() {
-                if new_highway_nodes.contains_key(&node.id) {
+                if close_highway_nodes.contains_key(&node.id) {
                     valid = true;
                 }
             }
             if valid {
+                for node in highway.nodes.iter() {
+                    new_highway_nodes.insert(node.id.clone(), node.clone());
+                }
                 Some(highway.clone())
             } else {
                 None
@@ -648,7 +663,7 @@ fn main() {
     } else if buffer == "2".to_string() {
         let mut city = String::new();
         get_input(&mut city);
-        let string_path = format!("./Cache/{}/amenities.bin", city);
+        let string_path = format!("./Cache/{}/amenities.json", city);
         let path = Path::new(&string_path);
         if !path.exists() {
             write_poi_cache(city.clone());
